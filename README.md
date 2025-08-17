@@ -41,3 +41,16 @@ eger (password == "lifeissogood") {
    cetak("Access Denied");
    cetak("Try Again");
 }
+```
+**Generated Python code:**
+```plaintext
+password = "lifeissogood"
+if password == "lifeissogood":
+    print("Access Granted")
+    message = "Welcome"
+    message = message + "HAHA"
+    print(message)
+else:
+    print("Access Denied")
+    print("Try Again")
+```
