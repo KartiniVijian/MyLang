@@ -1,0 +1,12 @@
+wenzi book1 = "Philosophy";
+wenzi book2 = "Computer Programming Language";
+
+eger (book1 == "Philosophy") {
+        cetak("I prefer Philisophy");
+}
+
+eger (book1 == book2) {
+        cetak ("Same type of book");
+} nemese {
+        cetak("Different book");
+}

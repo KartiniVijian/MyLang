@@ -1,0 +1,6 @@
+sura x;
+ulang 3 kali { 
+  x = x + "!";
+  cetak(x); 
+  }
+

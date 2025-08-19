@@ -1,0 +1,393 @@
+PARSER_BEGIN(MyLangParser)
+
+import java.util.HashSet;
+import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
+
+public class MyLangParser {
+    private static Set<String> declaredVariables = new HashSet<String>();
+    private static Map<String, String> variables = new HashMap<String, String>();
+    private static boolean executeBlock = true;  // Simple flag to control execution
+    public static StringBuilder generatedJavaCode = new StringBuilder();
+    public static StringBuilder currentJavaCodeBuffer = generatedJavaCode;
+
+    public static void main(String[] args) throws Exception {
+        java.io.FileInputStream fis = new java.io.FileInputStream("example.simp");
+        MyLangParser parser = new MyLangParser(fis);
+        parser.Program();
+
+         // 包裝產生的程式碼成為完整 Java 程式
+    String fullCode = "public class Main {\n"
+            + "    public static void main(String[] args) {\n"
+            + generatedJavaCode.toString().replaceAll("(?m)^", "        ")
+            + "    }\n"
+            + "}\n";
+
+    System.out.println("Generated Java code:\n");
+    System.out.println(fullCode);
+
+    try (java.io.FileWriter writer = new java.io.FileWriter("Main.java")) {
+        writer.write(fullCode);
+    }
+    }
+    
+}
+PARSER_END(MyLangParser)
+
+SKIP : { " " | "\t" | "\n" | "\r" }
+
+// ---------- TOKENS ----------
+
+TOKEN : { <WENZI: "wenzi"> }
+TOKEN : { <CETAK: "cetak"> }
+TOKEN : { <EGER: "eger"> }
+TOKEN : { <NEMESE: "nemese"> }
+TOKEN : { <ULANG: "ulang"> }
+TOKEN : { <KALI: "kali"> }
+TOKEN : { <SURA: "sura"> }
+TOKEN : { <LPAR: "(" > }
+TOKEN : { <RPAR: ")" > }
+TOKEN : { <LBRA: "{" > }
+TOKEN : { <RBRA: "}" > }
+TOKEN : { <SEMI: ";" > }
+TOKEN : { <COMMA: "," > }
+TOKEN : { <ASN: "=" > }
+TOKEN : { <PLUS: "+"> }
+
+TOKEN : { <EQ: "=="> | <NEQ: "!="> | <LT: "<"> | <GT: ">"> | <LE: "<="> | <GE: ">="> }
+
+TOKEN : { <STRING: "\"" (~["\"","\\","\n","\r"])* "\""> }
+TOKEN : { <DIGIT: "0" | ["1"-"9"] (["0"-"9"])* > }
+TOKEN : { <VAR: ["a"-"z","A"-"Z"] (["a"-"z","A"-"Z","0"-"9"])* > }
+
+// ---------- GRAMMAR ----------
+
+void Program() : {}
+{
+    ( Statement() )* <EOF>
+}
+
+void Statement() : {}
+{
+      StringDeclaration()
+    | Assignment()
+    | IfStatement()
+    | PrintStatement()
+    | LoopStatement()
+    | InputStatement()
+}
+
+void StringDeclaration() : {String varName; String value;}
+{
+    <WENZI> <VAR> {varName = getToken(0).image;} <ASN> <STRING> {value = getToken(0).image;} <SEMI>
+    {
+        if (MyLangParser.declaredVariables.contains(varName)) {
+            throw new ParseException("Variable '" + varName + "' is already declared");
+        }
+        MyLangParser.declaredVariables.add(varName);
+        MyLangParser.variables.put(varName, value);
+
+        // 新增這行，把Python代碼放進 StringBuilder
+        generatedJavaCode.append("String " + varName + " = " + value + ";\n");
+    }
+}
+
+void Assignment() : {String varName; String leftVar; String rightStr;}
+{
+    <VAR> { varName = getToken(0).image; } <ASN>
+    (
+        // 字串賦值: var = "string";
+        <STRING> {
+            rightStr = getToken(0).image;
+            if (!MyLangParser.declaredVariables.contains(varName)) {
+                throw new ParseException("Variable '" + varName + "' must be declared before assignment");
+            }
+            MyLangParser.variables.put(varName, rightStr);
+            MyLangParser.currentJavaCodeBuffer.append(varName + " = " + rightStr + ";\n");
+        }
+        |
+        // 字串相加賦值: var = var + "string";
+        <VAR> { leftVar = getToken(0).image; }
+        <PLUS>
+        <STRING> { rightStr = getToken(0).image; }
+        {
+            if (!MyLangParser.declaredVariables.contains(varName) || !MyLangParser.declaredVariables.contains(leftVar)) {
+                throw new ParseException("Variables must be declared before assignment");
+            }
+            // 更新 runtime 值
+            String oldVal = MyLangParser.variables.get(leftVar);
+            if (oldVal.startsWith("\"") && oldVal.endsWith("\"")) {
+                oldVal = oldVal.substring(1, oldVal.length()-1);
+            }
+            String newVal = "\"" + oldVal + rightStr.substring(1, rightStr.length()-1) + "\"";
+            MyLangParser.variables.put(varName, newVal);
+
+            // 產生 Java 代碼
+            MyLangParser.currentJavaCodeBuffer.append(varName + " = " + leftVar + " + " + rightStr + ";\n");
+        }
+    )
+    <SEMI>
+  
+}
+
+void IfStatement() : {
+    boolean hasStatements = false;
+    boolean condition;
+    boolean oldExecuteBlock;
+    String tmp;
+
+    String leftExpr = "", rightExpr = "";   // 產生 Java code 時用的
+    String leftVal = "", rightVal = "";     // 實際值，用來判斷邏輯
+    String op = "";
+}
+{
+    <EGER> <LPAR>
+    (
+        <STRING> {
+            leftVal = getToken(0).image.substring(1, getToken(0).image.length()-1);
+            leftExpr = "\"" + leftVal + "\"";
+        }
+        |
+        <VAR> {
+            leftExpr = getToken(0).image;
+            if (!MyLangParser.variables.containsKey(leftExpr)) {
+                throw new ParseException("Variable '" + leftExpr + "' is not initialized");
+            }
+            leftVal = MyLangParser.variables.get(leftExpr);
+            if (leftVal.startsWith("\"") && leftVal.endsWith("\"")) {
+                leftVal = leftVal.substring(1, leftVal.length()-1);
+            }
+        }
+    )
+    (
+        <EQ> { op = "=="; }
+        | <NEQ> { op = "!="; }
+        | <LT> { op = "<"; }
+        | <GT> { op = ">"; }
+        | <LE> { op = "<="; }
+        | <GE> { op = ">="; }
+    )
+    (
+        <STRING> {
+            rightVal = getToken(0).image.substring(1, getToken(0).image.length()-1);
+            rightExpr = "\"" + rightVal + "\"";
+        }
+        |
+        <VAR> {
+            rightExpr = getToken(0).image;
+            if (!MyLangParser.variables.containsKey(rightExpr)) {
+                throw new ParseException("Variable '" + rightExpr + "' is not initialized");
+            }
+            rightVal = MyLangParser.variables.get(rightExpr);
+            if (rightVal.startsWith("\"") && rightVal.endsWith("\"")) {
+                rightVal = rightVal.substring(1, rightVal.length()-1);
+            }
+        }
+    )
+    <RPAR>
+    {
+        // 執行實際邏輯比較
+        switch(op) {
+            case "==": condition = leftVal.equals(rightVal); break;
+            case "!=": condition = !leftVal.equals(rightVal); break;
+            case "<": condition = leftVal.compareTo(rightVal) < 0; break;
+            case ">": condition = leftVal.compareTo(rightVal) > 0; break;
+            case "<=": condition = leftVal.compareTo(rightVal) <= 0; break;
+            case ">=": condition = leftVal.compareTo(rightVal) >= 0; break;
+            default: condition = false;
+        }
+
+        // 產生 Java 程式碼
+        tmp = "{\n";
+        if (op.equals("==")) {
+            MyLangParser.generatedJavaCode.append("if (" + leftExpr + ".equals(" + rightExpr + "))" + tmp);
+        } else if (op.equals("!=")) {
+            MyLangParser.generatedJavaCode.append("if (!" + leftExpr + ".equals(" + rightExpr + "))" + tmp);
+        } else {
+            MyLangParser.generatedJavaCode.append("if (" + leftExpr + " " + op + " " + rightExpr + ")" + tmp);
+        }
+    }
+
+    <LBRA>
+    {
+        hasStatements = false;
+        StringBuilder ifBlockCode = new StringBuilder();
+        oldExecuteBlock = executeBlock;
+        executeBlock = oldExecuteBlock && condition;
+        MyLangParser.currentJavaCodeBuffer = ifBlockCode;
+    }
+    ( Statement() { hasStatements = true; } )*
+    <RBRA>
+    {
+        if (!hasStatements) {
+            throw new ParseException("If block cannot be empty");
+        }
+        executeBlock = oldExecuteBlock;
+        for (String line : ifBlockCode.toString().split("\n")) {
+            if (!line.trim().isEmpty()) {
+                MyLangParser.generatedJavaCode.append("    " + line + "\n");
+            }
+        }
+        MyLangParser.generatedJavaCode.append("}\n");
+        MyLangParser.currentJavaCodeBuffer = MyLangParser.generatedJavaCode;
+    }
+
+    [
+        <NEMESE> <LBRA>
+        {
+            hasStatements = false;
+            tmp = "else {\n";
+            MyLangParser.generatedJavaCode.append(tmp);
+            StringBuilder elseBlockCode = new StringBuilder();
+            oldExecuteBlock = executeBlock;
+            executeBlock = oldExecuteBlock && !condition;
+            MyLangParser.currentJavaCodeBuffer = elseBlockCode;
+        }
+        ( Statement() { hasStatements = true; } )*
+        <RBRA>
+        {
+            if (!hasStatements) {
+                throw new ParseException("Else block cannot be empty");
+            }
+            executeBlock = oldExecuteBlock;
+            for (String line : elseBlockCode.toString().split("\n")) {
+                if (!line.trim().isEmpty()) {
+                    MyLangParser.generatedJavaCode.append("    " + line + "\n");
+                }
+            }
+
+            MyLangParser.generatedJavaCode.append("}\n");
+            MyLangParser.currentJavaCodeBuffer = MyLangParser.generatedJavaCode;
+        }
+    ]
+}
+
+
+void Condition() : {}
+{
+    Printable() CompOperator() Printable()
+}
+
+void CompOperator() : {}
+{
+    <EQ> | <NEQ> | <LT> | <GT> | <LE> | <GE>
+}
+
+void PrintStatement() : { 
+    String value; 
+    boolean first = true; 
+}
+{
+    <CETAK> <LPAR>
+    (
+        <STRING> {
+            value = getToken(0).image;
+            if (!first) MyLangParser.currentJavaCodeBuffer.append("System.out.print(\", \");\n");
+            MyLangParser.currentJavaCodeBuffer.append("System.out.print(" + value + ");\n");
+            first = false;
+        }
+        | <VAR> {
+            value = getToken(0).image;
+            if (!MyLangParser.variables.containsKey(value)) {
+                throw new ParseException("Variable '" + value + "' is not initialized");
+            }
+            if (!first) MyLangParser.currentJavaCodeBuffer.append("System.out.print(\", \");\n");
+            MyLangParser.currentJavaCodeBuffer.append("System.out.print(" + value + ");\n");
+            first = false;
+        }
+    )
+    (
+        <COMMA>
+        (
+            <STRING> {
+                value = getToken(0).image;
+                MyLangParser.currentJavaCodeBuffer.append("System.out.print(\", \");\n");
+                MyLangParser.currentJavaCodeBuffer.append("System.out.print(" + value + ");\n");
+            }
+            | <VAR> {
+                value = getToken(0).image;
+                if (!MyLangParser.variables.containsKey(value)) {
+                    throw new ParseException("Variable '" + value + "' is not initialized");
+                }
+                MyLangParser.currentJavaCodeBuffer.append("System.out.print(\", \");\n");
+                MyLangParser.currentJavaCodeBuffer.append("System.out.print(" + value + ");\n");
+            }
+        )
+    )*
+    <RPAR> <SEMI>
+    {
+        MyLangParser.currentJavaCodeBuffer.append("System.out.println();\n");
+    }
+}
+
+
+void Printable() : {}
+{
+    <STRING> | <VAR>
+}
+
+void LoopStatement() : { 
+    int count;
+    boolean hasStatements = false;
+    StringBuilder tempBuffer = new StringBuilder();
+    boolean oldExecuteBlock;
+    String tmp;
+}
+{
+    <ULANG> <DIGIT> {
+        count = Integer.parseInt(getToken(0).image);
+    } <KALI>
+    <LBRA>
+    {
+        // 暫存目前的執行狀態與緩衝區
+        oldExecuteBlock = executeBlock;
+        executeBlock = oldExecuteBlock;
+
+        // 使用暫存 buffer 收集迴圈內的 code
+        tempBuffer = new StringBuilder();
+        MyLangParser.currentJavaCodeBuffer = tempBuffer;
+    }
+
+    ( Statement() { hasStatements = true; } )*
+
+    <RBRA>
+    {
+        if (!hasStatements) {
+            throw new ParseException("Loop body cannot be empty");
+        }
+
+        // 將暫存內容寫入最終 Java code
+        tmp = "{\n";
+        MyLangParser.generatedJavaCode.append("for (int i = 0; i < " + count + "; i++)"+tmp);
+        for (String line : tempBuffer.toString().split("\n")) {
+            if (!line.trim().isEmpty()) {
+                MyLangParser.generatedJavaCode.append("    " + line + "\n");
+            }
+        }
+        tmp = "}\n";
+        MyLangParser.generatedJavaCode.append(tmp);
+
+        // 恢復狀態
+        executeBlock = oldExecuteBlock;
+        MyLangParser.currentJavaCodeBuffer = MyLangParser.generatedJavaCode;
+    }
+}
+
+
+
+void InputStatement() : { String varName; }
+{
+    <SURA> <VAR> { varName = getToken(0).image; } <SEMI>
+    {
+        if (!MyLangParser.declaredVariables.contains(varName)) {
+            MyLangParser.declaredVariables.add(varName);
+        }
+
+        System.out.print("Enter value for " + varName + ": ");
+        java.util.Scanner scanner = new java.util.Scanner(System.in);
+        String value = scanner.nextLine();
+        MyLangParser.variables.put(varName, "\"" + value + "\""); // сохраняем как строку
+        
+    }
+}

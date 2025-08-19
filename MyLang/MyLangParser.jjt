@@ -1,0 +1,126 @@
+options {
+    MULTI=true;
+    VISITOR=true;
+    TRACK_TOKENS=true;
+}
+
+PARSER_BEGIN(MyLangParser)
+
+import java.util.HashSet;
+import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
+
+public class MyLangParser {
+    public static Set<String> declaredVariables = new HashSet<String>();
+    public static Map<String, String> variables = new HashMap<String, String>();
+    public static boolean executeBlock = true;
+
+    public static void main(String[] args) throws Exception {
+        MyLangParser parser = new MyLangParser(new java.io.FileInputStream("example.simp"));
+        ASTProgram root = parser.Program();
+        root.jjtAccept(new InterpreterVisitor(), null);
+    }
+}
+
+PARSER_END(MyLangParser)
+
+SKIP : { " " | "\t" | "\n" | "\r" }
+
+TOKEN : { <WENZI: "wenzi"> | <CETAK: "cetak"> | <EGER: "eger"> | <NEMESE: "nemese"> | <ULANG: "ulang"> | <KALI: "kali"> | <SURA: "sura"> }
+TOKEN : { <LPAR: "(" > | <RPAR: ")" > | <LBRA: "{" > | <RBRA: "}" > | <SEMI: ";" > | <COMMA: "," > | <ASN: "=" > | <PLUS: "+"> }
+TOKEN : { <EQ: "=="> | <NEQ: "!="> | <LT: "<"> | <GT: ">"> | <LE: "<="> | <GE: ">="> }
+TOKEN : { <STRING: "\"" (~["\"","\\","\n","\r"])* "\""> | <DIGIT: "0" | ["1"-"9"] (["0"-"9"])* > }
+TOKEN : { <VAR: ["a"-"z","A"-"Z"] (["a"-"z","A"-"Z","0"-"9"])* > }
+
+ASTProgram Program() #Program : {} {
+    ( Statement() )* <EOF>
+    {
+        return jjtThis;
+    }
+}
+
+void Statement() #Statement : {} {
+    StringDeclaration() | Assignment() | IfStatement() | PrintStatement() | LoopStatement() | InputStatement()
+}
+
+void StringDeclaration() #StringDeclaration : {} {
+    <WENZI> Var() <ASN> Expression() <SEMI>
+}
+
+void Assignment() #Assignment : {} {
+    Var() <ASN> Expression() <SEMI>
+}
+
+void IfStatement() #IfStatement : {} {
+    <EGER> <LPAR> Condition() <RPAR> <LBRA> Block() <RBRA>
+    [<NEMESE> <LBRA> Block() <RBRA>]
+}
+
+void Block() #Block : {} {
+    ( Statement() )*
+}
+
+void Condition() #Condition : {} {
+    Printable() CompOperator() Printable()
+}
+
+
+void CompOperator() #CompOperator : { Token t; }
+{
+    (
+        t = <EQ> 
+        | t = <NEQ> 
+        | t = <LT> 
+        | t = <GT> 
+        | t = <LE> 
+        | t = <GE>
+    )
+    {
+        jjtn000.setToken(t);
+    }
+}
+
+void PrintStatement() #PrintStatement : {} {
+    <CETAK> <LPAR> ( Printable() (<COMMA> Printable())* )? <RPAR> <SEMI>
+}
+
+void Printable() #Printable : {} {
+    StringLiteral() | Var()
+}
+
+void LoopStatement() #LoopStatement : {} {
+    <ULANG> PrintableValue() <KALI> <LBRA> (Statement())* <RBRA>
+}
+
+void InputStatement() #InputStatement : {} {
+    <SURA> Var() <SEMI>
+}
+
+void Expression() #Expression : {} {
+    PrintableValue() (<PLUS> PrintableValue())*
+}
+
+void PrintableValue() #PrintableValue : { Token t; } {
+    (
+        t = <STRING> { jjtThis.setToken(t); }
+      | t = <VAR>    { jjtThis.setToken(t); }
+      | t = <DIGIT>  { jjtThis.setToken(t); }
+    )
+}
+
+void StringLiteral() #StringLiteral : { Token t; } {
+    t = <STRING>
+    {
+        jjtThis.setToken(t);
+        
+    }
+}
+
+void Var() #Var : { Token t; } {
+    t = <VAR>
+    {
+        jjtThis.setToken(t);
+       
+    }
+}
